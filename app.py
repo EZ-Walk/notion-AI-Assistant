@@ -77,11 +77,10 @@ def get_comments_from_page():
         comments = notion.comments.list(block_id=NOTION_PAGE_ID)
         results = comments.get("results", [])
         
-        # Save comments to database
+        # Save comments to database with comparison logic
         if results:
-            new_comments = CommentService.save_comments_to_db(results)
-            if new_comments > 0:
-                logger.info(f"Saved {new_comments} new comments to database")
+            result = CommentService.save_comments_to_db(results)
+            logger.info(f"Comment processing results: {result['new']} new, {result['updated']} updated, {result['unchanged']} unchanged")
         
         return results
     except Exception as e:
@@ -186,11 +185,39 @@ def poll_notion_page():
     
     # Use Flask application context for database operations
     with app.app_context():
+        # Get comments from Notion page
         comments = get_comments_from_page()
         
-        for comment in comments:
-            print(comment)
-            process_comment(comment)
+        # Get comments that need processing (new or updated)
+        from models.database import Comment
+        comments_to_process = Comment.query.filter(Comment.status.in_(['new', 'updated'])).all()
+        
+        logger.info(f"Found {len(comments_to_process)} comments to process (new or updated)")
+        
+        # Process each comment that needs processing
+        for comment in comments_to_process:
+            logger.info(f"Processing comment {comment.id} with status {comment.status}")
+            # Convert database comment to format expected by process_comment
+            comment_data = {
+                "id": comment.id,
+                "discussion_id": comment.discussion_id,
+                "parent": {
+                    f"{comment.parent_type}_id": comment.parent_id
+                },
+                "rich_text": [{
+                    "text": {
+                        "content": comment.plain_text
+                    }
+                }],
+                "created_time": comment.created_time.isoformat() if comment.created_time else None,
+                "last_edited_time": comment.last_edited_time.isoformat() if comment.last_edited_time else None,
+                "created_by": {
+                    "id": comment.created_by_id
+                } if comment.created_by_id else None
+            }
+            
+            # Process the comment
+            process_comment(comment_data)
         
         logger.info(f"Finished polling. Processed {len(processed_comments)} comments in total")
 

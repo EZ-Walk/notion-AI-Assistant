@@ -18,17 +18,16 @@ class CommentService:
             comments (list): List of comment objects from Notion API
             
         Returns:
-            int: Number of new comments saved
+            dict: Dictionary with counts of new, updated, and unchanged comments
         """
-        new_comments_count = 0
+        result = {
+            "new": 0,
+            "updated": 0,
+            "unchanged": 0
+        }
         
         try:
             for comment in comments:
-                # Check if comment already exists in database
-                existing_comment = Comment.query.get(comment["id"])
-                if existing_comment:
-                    continue
-                
                 # Extract comment data
                 comment_id = comment["id"]
                 discussion_id = comment.get("discussion_id")
@@ -49,40 +48,61 @@ class CommentService:
                 if "rich_text" in comment and len(comment["rich_text"]) > 0:
                     plain_text = comment["rich_text"][0].get("text", {}).get("content", "")
                 
-                # Extract timestamps
+                # Extract timestamps - convert to naive datetimes for database compatibility
                 created_time = datetime.fromisoformat(comment.get("created_time", "").replace("Z", "+00:00"))
+                # Remove timezone info to make it naive
+                created_time = created_time.replace(tzinfo=None)
+                
                 last_edited_time = None
                 if comment.get("last_edited_time"):
                     last_edited_time = datetime.fromisoformat(comment.get("last_edited_time", "").replace("Z", "+00:00"))
+                    # Remove timezone info to make it naive
+                    last_edited_time = last_edited_time.replace(tzinfo=None)
                 
                 # Extract user ID
                 created_by_id = None
                 if "created_by" in comment and "id" in comment["created_by"]:
                     created_by_id = comment["created_by"]["id"]
                 
-                # Create new comment record
-                new_comment = Comment(
-                    id=comment_id,
-                    discussion_id=discussion_id,
-                    parent_type=parent_type,
-                    parent_id=parent_id,
-                    plain_text=plain_text,
-                    created_time=created_time,
-                    last_edited_time=last_edited_time,
-                    created_by_id=created_by_id,
-                    status='new'
-                )
+                # Check if comment already exists in database
+                existing_comment = Comment.query.get(comment_id)
                 
-                db.session.add(new_comment)
-                new_comments_count += 1
+                if not existing_comment:
+                    # Case 1: Comment doesn't exist in database, add it
+                    new_comment = Comment(
+                        id=comment_id,
+                        discussion_id=discussion_id,
+                        parent_type=parent_type,
+                        parent_id=parent_id,
+                        plain_text=plain_text,
+                        created_time=created_time,
+                        last_edited_time=last_edited_time,
+                        created_by_id=created_by_id,
+                        status='new'
+                    )
+                    
+                    db.session.add(new_comment)
+                    result["new"] += 1
+                    logger.info(f"Added new comment: {comment_id}")
+                    
+                elif existing_comment.last_edited_time and last_edited_time and last_edited_time > existing_comment.last_edited_time:
+                    # Case 2: Comment exists but has been updated (newer last_edited_time)
+                    existing_comment.plain_text = plain_text
+                    existing_comment.last_edited_time = last_edited_time
+                    existing_comment.status = 'updated'
+                    result["updated"] += 1
+                    logger.info(f"Updated comment: {comment_id}")
+                    
+                else:
+                    # Case 3: Comment exists and hasn't changed
+                    result["unchanged"] += 1
             
             db.session.commit()
-            return new_comments_count
-            
+            return result 
         except Exception as e:
             db.session.rollback()
             logger.error(f"Error saving comments to database: {e}")
-            return 0
+            return {"new": 0, "updated": 0, "unchanged": 0, "error": str(e)}
     
     @staticmethod
     def get_new_comments():
