@@ -1,0 +1,18 @@
+version: '3'
+
+services:
+  poller:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5001:5001"
+    environment:
+      - NOTION_API_KEY=${NOTION_API_KEY}
+      - NOTION_PAGE=${NOTION_PAGE}
+      - POLLING_INTERVAL=${POLLING_INTERVAL:-60}
+      - PORT=5001
+      - SQLALCHEMY_DATABASE_URI=sqlite:///notion_comments.db
+    volumes:
+      - ./instance:/app/instance
+    restart: unless-stopped
