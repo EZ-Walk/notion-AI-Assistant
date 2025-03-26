@@ -5,7 +5,6 @@ import threading
 from datetime import datetime
 from flask import Flask, jsonify
 from dotenv import load_dotenv
-import requests  # Still needed for some operations
 import openai
 from notion_client import Client
 
@@ -30,16 +29,17 @@ app = Flask(__name__)
 # Initialize database
 init_db(app)
 
-# Notion API configuration
-NOTION_API_KEY = os.getenv("NOTION_API_KEY")
-NOTION_API_BASE_URL = "https://api.notion.com/v1"
-NOTION_HEADERS = {
-    "Authorization": f"Bearer {NOTION_API_KEY}",
-    "Notion-Version": "2022-06-28",
-    "Content-Type": "application/json"
-}
+# # Notion API configuration
+# NOTION_API_KEY = os.getenv("NOTION_API_KEY")
+# NOTION_API_BASE_URL = "https://api.notion.com/v1"
+# NOTION_HEADERS = {
+#     "Authorization": f"Bearer {NOTION_API_KEY}",
+#     "Notion-Version": "2022-06-28",
+#     "Content-Type": "application/json"
+# }
 
 # Initialize Notion client
+NOTION_API_KEY = os.getenv("NOTION_API_KEY")
 notion = Client(auth=NOTION_API_KEY)
 
 # OpenAI API configuration
@@ -183,17 +183,21 @@ def poll_notion_page():
         return
     
     logger.info(f"Polling Notion page {NOTION_PAGE_ID} for new comments")
-    comments = get_comments_from_page()
     
-    for comment in comments:
-        print(comment)
-        process_comment(comment)
-    
-    logger.info(f"Finished polling. Processed {len(processed_comments)} comments in total")
+    # Use Flask application context for database operations
+    with app.app_context():
+        comments = get_comments_from_page()
+        
+        for comment in comments:
+            print(comment)
+            process_comment(comment)
+        
+        logger.info(f"Finished polling. Processed {len(processed_comments)} comments in total")
 
 def start_scheduler():
     """Start a simple polling loop at regular intervals."""
     while POLLING_ACTIVE:
+        # Each polling cycle runs in the app context
         poll_notion_page()
         time.sleep(POLLING_INTERVAL)
 
@@ -224,7 +228,7 @@ def status():
     from models.database import Comment
     total_comments = Comment.query.count()
     processed_count = Comment.query.filter_by(status='processed').count()
-    unprocessed_count = Comment.query.filter_by(status='unprocessed').count()
+    new_count = Comment.query.filter_by(status='new').count()
     error_count = Comment.query.filter_by(status='error').count()
     
     return jsonify({
@@ -235,7 +239,7 @@ def status():
         "comments": {
             "total": total_comments,
             "processed": processed_count,
-            "unprocessed": unprocessed_count,
+            "new": new_count,
             "error": error_count
         },
         "processed_comments_memory": len(processed_comments),  # Legacy tracking

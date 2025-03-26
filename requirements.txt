@@ -1,8 +1,7 @@
 Flask==2.2.5
 python-dotenv==0.21.1
-requests==2.22.0
 openai==0.28.1
 gunicorn==20.1.0
-notion-client==1.0.0
+notion-client==2.3.0
 SQLAlchemy==1.4.46
 Flask-SQLAlchemy==3.0.3

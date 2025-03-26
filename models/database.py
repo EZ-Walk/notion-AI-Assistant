@@ -18,12 +18,12 @@ class Comment(db.Model):
     last_edited_time = db.Column(db.DateTime, nullable=True)
     created_by_id = db.Column(db.String(36), nullable=True)  # User ID who created the comment
     plain_text = db.Column(db.Text, nullable=False)  # The comment text content
-    status = db.Column(db.String(20), default='unprocessed')  # Status of the comment (unprocessed, processed, error)
+    status = db.Column(db.String(20), default='new')  # Status of the comment (new, processed, error)
     processed_at = db.Column(db.DateTime, nullable=True)  # When the comment was processed
     
     def __init__(self, id, parent_type, parent_id, plain_text, discussion_id=None, 
                  created_time=None, last_edited_time=None, created_by_id=None, 
-                 status='unprocessed'):
+                 status='new'):
         self.id = id
         self.discussion_id = discussion_id
         self.parent_type = parent_type

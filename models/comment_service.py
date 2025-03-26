@@ -70,7 +70,7 @@ class CommentService:
                     created_time=created_time,
                     last_edited_time=last_edited_time,
                     created_by_id=created_by_id,
-                    status='unprocessed'
+                    status='new'
                 )
                 
                 db.session.add(new_comment)
@@ -85,14 +85,14 @@ class CommentService:
             return 0
     
     @staticmethod
-    def get_unprocessed_comments():
+    def get_new_comments():
         """
-        Get all unprocessed comments from the database.
+        Get all new comments from the database.
         
         Returns:
-            list: List of Comment objects with status 'unprocessed'
+            list: List of Comment objects with status 'new'
         """
-        return Comment.query.filter_by(status='unprocessed').all()
+        return Comment.query.filter_by(status='new').all()
     
     @staticmethod
     def mark_comment_as_processed(comment_id):
