@@ -3,7 +3,7 @@ import time
 import logging
 import threading
 from datetime import datetime
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from dotenv import load_dotenv
 from notion_client import Client
 
@@ -47,7 +47,7 @@ if missing_vars:
     logger.error("Please set these variables in your .env file. See .env.sample for reference.")
 
 # Flag to control polling
-POLLING_ACTIVE = True
+POLLING_ACTIVE = False
 
 def get_comments_from_page():
     """Retrieve all comments from the specified Notion page and save to database."""
@@ -65,8 +65,6 @@ def get_comments_from_page():
     except Exception as e:
         logger.error(f"Error retrieving comments: {e}")
         return []
-
-
 
 def get_comments_from_db(discussion_id=None, parent_id=None, status=None):
     """Retrieve comments from the database with optional filters."""
@@ -105,6 +103,49 @@ def start_scheduler():
         # Each polling cycle runs in the app context
         poll_notion_page()
         time.sleep(POLLING_INTERVAL)
+
+def process_comment(request_json):
+    """Handle Notion comment events."""
+    
+    # Get comments on the parent block
+    comments_on_parent = notion.comments.list(block_id=request_json['data']['parent']['id'])
+    
+    # Get the comment that triggered the event
+    triggering_comment = None
+    for comment in comments_on_parent['results']:
+        if comment['id'] == request_json['entity']['id']:
+            triggering_comment = comment
+            break
+    
+    print('Comment data: "{}"'.format(triggering_comment))
+    
+    notion.comments.create(discussion_id=triggering_comment['discussion_id'], 
+                        rich_text=[{
+                                    "text": {
+                                    "content": triggering_comment['rich_text'][0]['plain_text'].upper()
+                                    }
+                                }]
+    )
+    
+    return triggering_comment['rich_text'][0]['plain_text'].upper() 
+    
+    
+
+@app.route('/comment-created', methods=['POST'])
+def handle_comment_created():
+    """Handle Notion comment events."""
+    
+    # Handle a webhook verification request
+    if request.json.get('verification_token'):
+        print(request.json['verification_token'])
+        return jsonify({"status": "success"})
+    
+    print("New comment event: {}".format(request.json))
+    
+    if request.json.get('authors')[0].get('type') == 'person':
+        process_comment(request.json)
+        
+    return jsonify({"status": "success"})
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -174,11 +215,12 @@ if __name__ == '__main__':
     # Only start the application if all required environment variables are set
     if not missing_vars:
         # Start the polling scheduler in a separate thread
-        scheduler_thread = threading.Thread(target=start_scheduler, daemon=True)
-        scheduler_thread.start()
+        if POLLING_ACTIVE:
+            scheduler_thread = threading.Thread(target=start_scheduler, daemon=True)
+            scheduler_thread.start()
         
         # Start the Flask app
         logger.info("Starting Notion Comment AI Assistant")
-        app.run(host='0.0.0.0', port=PORT, debug=False)
+        app.run(host='0.0.0.0', port=PORT, debug=True)
     else:
         logger.error("Application not started due to missing environment variables.")
