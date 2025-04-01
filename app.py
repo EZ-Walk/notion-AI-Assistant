@@ -130,7 +130,7 @@ def process_comment(request_json):
     
     # Get comments on the parent block
     comment = fetch_comment_from_parent(request_json['data']['parent']['id'], request_json['entity']['id'])
-    logger.info(f"Comment data: {comment}")
+    # logger.info(f"Comment data: {comment}")
     
     # Extract the comment's text
     try:
@@ -165,15 +165,13 @@ def action_router(event_payload):
         dict: Response data with status and any additional information
     """
     logging.info(f"Routing action for event: {event_payload.get('type', 'unknown')}") 
+    print(event_payload)
     
     response = {"status": "success", "action": "none"}
     
     # Check if the author is a person (not a bot)
     if event_payload.get('authors') and event_payload['authors'][0].get('type') == 'person':
         logging.info(f"Processing comment from person: {event_payload['authors'][0].get('id', 'unknown')}") 
-        
-        # Get context for the comment
-        # TODO: Implement context collection
         
         # Process the comment with the additional context
         if event_payload.get('type') == 'comment.created':
