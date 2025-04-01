@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import threading
+from typing import Optional
 from datetime import datetime
 from flask import Flask, jsonify, request
 from dotenv import load_dotenv
@@ -10,6 +11,8 @@ from notion_client import Client
 # Import database models and services
 from models.database import init_db
 from models.comment_service import CommentService
+from models.langchain_agent import NotionAgent, create_custom_notion_agent
+from models.langgraph_agent import get_graph
 
 # Configure logging
 logging.basicConfig(
@@ -31,6 +34,10 @@ init_db(app)
 # Initialize Notion client
 NOTION_API_KEY = os.getenv("NOTION_API_KEY")
 notion = Client(auth=NOTION_API_KEY)
+
+# Initialize the agent for processing comments
+# notion_agent = create_custom_notion_agent()
+notion_agent = get_graph()
 
 # Get configuration from environment variables
 NOTION_PAGE_ID = os.getenv("NOTION_PAGE")
@@ -104,32 +111,76 @@ def start_scheduler():
         poll_notion_page()
         time.sleep(POLLING_INTERVAL)
 
+def fetch_comment_from_parent(parent_id: str, comment_id: Optional[str] = None):
+	comments = notion.comments.list(block_id=parent_id)
+ 
+	# catch no comments found by checking the length of the results field
+	if len(comments.get('results', [])) == 0:
+		return {}
+
+	# optionally, return only the comment requested by ID
+	if comment_id:
+		for this_c in comments.get('results'):
+			if this_c['id'] == comment_id:
+				return this_c
+
+	# Finally, return all comments
+	return comments.get('results', 'No comments found')
+
 def process_comment(request_json):
     """Handle Notion comment events."""
     
     # Get comments on the parent block
-    comments_on_parent = notion.comments.list(block_id=request_json['data']['parent']['id'])
+    comment = fetch_comment_from_parent(request_json['data']['parent']['id'], request_json['entity']['id'])
+    print('Comment data: "{}"'.format(comment))
     
-    # Get the comment that triggered the event
-    triggering_comment = None
-    for comment in comments_on_parent['results']:
-        if comment['id'] == request_json['entity']['id']:
-            triggering_comment = comment
-            break
+    # Process the comment using the agent
+    response = notion_agent.invoke({"messages": [{"role": "user", "content": comment['rich_text'][0]['plain_text']}]})
+    print('Response: "{}"'.format(response))
     
-    print('Comment data: "{}"'.format(triggering_comment))
-    
-    notion.comments.create(discussion_id=triggering_comment['discussion_id'], 
+    # Reply to the triggering comment with the response
+    reply = notion.comments.create(discussion_id=comment['discussion_id'], 
                         rich_text=[{
                                     "text": {
-                                    "content": triggering_comment['rich_text'][0]['plain_text'].upper()
+                                    "content": response['messages'][-1].content
                                     }
                                 }]
     )
     
-    return triggering_comment['rich_text'][0]['plain_text'].upper() 
+    return reply 
     
+def action_router(event_payload):
+    """Route the event payload to the appropriate handler based on event type and content.
     
+    Args:
+        event_payload (dict): The JSON payload from the webhook event
+        
+    Returns:
+        dict: Response data with status and any additional information
+    """
+    logging.info(f"Routing action for event: {event_payload.get('event_type', 'unknown')}") 
+    
+    response = {"status": "success", "action": "none"}
+    
+    # Check if the author is a person (not a bot)
+    if event_payload.get('authors') and event_payload['authors'][0].get('type') == 'person':
+        logging.info(f"Processing comment from person: {event_payload['authors'][0].get('id', 'unknown')}") 
+        
+        # Get context for the comment
+        # TODO: Implement context collection
+        
+        # Process the comment with the additional context
+        result = process_comment(event_payload)
+        
+        response.update({
+            "action": "processed_comment",
+            "result": result
+        })
+    else:
+        logging.info("Skipping event: not from a person or no author information")
+    
+    return response
+
 
 @app.route('/comment-created', methods=['POST'])
 def handle_comment_created():
@@ -137,15 +188,15 @@ def handle_comment_created():
     
     # Handle a webhook verification request
     if request.json.get('verification_token'):
-        print(request.json['verification_token'])
+        logging.info(f"Received verification token: {request.json['verification_token']}")
         return jsonify({"status": "success"})
     
-    print("New comment event: {}".format(request.json))
+    logging.info(f"New comment event received: {request.json.get('event_type', 'unknown')}")
     
-    if request.json.get('authors')[0].get('type') == 'person':
-        process_comment(request.json)
-        
-    return jsonify({"status": "success"})
+    # Route the event to the appropriate handler
+    response = action_router(request.json)
+    
+    return jsonify(response)
 
 @app.route('/health', methods=['GET'])
 def health_check():
