@@ -11,7 +11,7 @@ from notion_client import Client
 # Import database models and services
 from models.database import init_db
 from models.comment_service import CommentService
-from models.langchain_agent import NotionAgent, create_custom_notion_agent
+# Import LangGraph agent
 from models.langgraph_agent import get_graph
 
 # Configure logging
@@ -40,8 +40,6 @@ notion = Client(auth=NOTION_API_KEY)
 notion_agent = get_graph()
 
 # Get configuration from environment variables
-NOTION_PAGE_ID = os.getenv("NOTION_PAGE")
-print("NOTION_PAGE_ID", NOTION_PAGE_ID)
 POLLING_INTERVAL = int(os.getenv("POLLING_INTERVAL", "60"))  # Default to 60 seconds
 PORT = int(os.getenv("PORT", "5001"))  # Default to port 5001
 
@@ -132,11 +130,19 @@ def process_comment(request_json):
     
     # Get comments on the parent block
     comment = fetch_comment_from_parent(request_json['data']['parent']['id'], request_json['entity']['id'])
-    print('Comment data: "{}"'.format(comment))
+    logger.info(f"Comment data: {comment}")
+    
+    # Extract the comment's text
+    try:
+        comment_text = [item['plain_text'] for item in comment['rich_text']]
+        logger.info(f"Comment text: {comment_text}")
+    except Exception as e:
+        logger.error(f"Failed to extract comment text: {e}")
+        return
     
     # Process the comment using the agent
-    response = notion_agent.invoke({"messages": [{"role": "user", "content": comment['rich_text'][0]['plain_text']}]})
-    print('Response: "{}"'.format(response))
+    response = notion_agent.invoke({"messages": [{"role": "user", "content": comment_text}]})
+    logger.info(f"Agent Response: {response}")
     
     # Reply to the triggering comment with the response
     reply = notion.comments.create(discussion_id=comment['discussion_id'], 
@@ -158,7 +164,7 @@ def action_router(event_payload):
     Returns:
         dict: Response data with status and any additional information
     """
-    logging.info(f"Routing action for event: {event_payload.get('event_type', 'unknown')}") 
+    logging.info(f"Routing action for event: {event_payload.get('type', 'unknown')}") 
     
     response = {"status": "success", "action": "none"}
     
@@ -170,12 +176,17 @@ def action_router(event_payload):
         # TODO: Implement context collection
         
         # Process the comment with the additional context
-        result = process_comment(event_payload)
-        
-        response.update({
-            "action": "processed_comment",
-            "result": result
+        if event_payload.get('type') == 'comment.created':
+            result = process_comment(event_payload)
+            
+            response.update({
+                "action": "processed_comment",
+                "result": result
         })
+        elif event_payload.get('type') == 'comment.deleted':
+            pass
+            # TODO: Handle comment deletion
+            
     else:
         logging.info("Skipping event: not from a person or no author information")
     
@@ -191,8 +202,8 @@ def handle_comment_created():
         logging.info(f"Received verification token: {request.json['verification_token']}")
         return jsonify({"status": "success"})
     
-    logging.info(f"New comment event received: {request.json.get('event_type', 'unknown')}")
-    
+    # Handle a new comment event
+    logging.info(f"New {request.json.get('type', 'unknown')} event received")
     # Route the event to the appropriate handler
     response = action_router(request.json)
     

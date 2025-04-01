@@ -5,6 +5,8 @@ from typing_extensions import TypedDict
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 
+import os
+
 class State(TypedDict):
     # Messages have the type "list". The `add_messages` function
     # in the annotation defines how this state key should be updated
@@ -17,7 +19,9 @@ def get_graph():
     # Create a Chatbot node
     from langchain_anthropic import ChatAnthropic
 
-    llm = ChatAnthropic(model="claude-3-5-sonnet-20240620", )
+    llm = ChatAnthropic(model='claude-3-5-haiku-20241022',
+                        temperature=os.getenv("LLM_TEMPERATURE"), 
+                        max_tokens_to_sample=os.getenv("LLM_MAX_TOKENS"))
 
 
     def chatbot(state: State):
