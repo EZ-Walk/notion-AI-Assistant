@@ -52,13 +52,13 @@ if missing_vars:
     logger.error("Please set these variables in your .env file. See .env.sample for reference.")
 
 # Flag to control polling
-POLLING_ACTIVE = False
+POLLING_ACTIVE = True
 
-def get_comments_from_page():
+def get_comments_from_notion():
     """Retrieve all comments from the specified Notion page and save to database."""
     try:
         # Get comments from the page using notion-client
-        comments = notion.comments.list(block_id=NOTION_PAGE_ID)
+        comments = notion.comments.list()
         results = comments.get("results", [])
         
         # Save comments to database with comparison logic
@@ -75,18 +75,15 @@ def get_comments_from_db(discussion_id=None, parent_id=None, status=None):
     """Retrieve comments from the database with optional filters."""
     return CommentService.get_comments_from_db(discussion_id, parent_id, status)
 
-def poll_notion_page():
-    """Poll the Notion page for new comments."""
-    if not NOTION_PAGE_ID:
-        logger.error("NOTION_PAGE_ID not set in environment variables")
-        return
+def poll_notion():
+    """Poll the Notion workspace for new comments."""
     
-    logger.info(f"Polling Notion page {NOTION_PAGE_ID} for new comments")
+    logger.info(f"Polling Notion for new comments")
     
     # Use Flask application context for database operations
     with app.app_context():
-        # Get comments from Notion page
-        comments = get_comments_from_page()
+        # Get comments from Notion
+        comments = get_comments_from_notion()
         
         # Get comments that need processing (new or updated)
         from models.database import Comment
@@ -106,7 +103,7 @@ def start_scheduler():
     """Start a simple polling loop at regular intervals."""
     while POLLING_ACTIVE:
         # Each polling cycle runs in the app context
-        poll_notion_page()
+        poll_notion()
         time.sleep(POLLING_INTERVAL)
 
 def fetch_comment_from_parent(parent_id: str, comment_id: Optional[str] = None):
