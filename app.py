@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from notion_client import Client
 
 # Import Supabase database and services
-from models.supabase_db import init_supabase, get_subscriptions, is_user_authorized
+from models.supabase_db import init_supabase, get_subscriptions, is_user_authorized, get_authenticated_client
 from models.supabase_comment_service import SupabaseCommentService
 
 # Import LangGraph agent
@@ -31,14 +31,24 @@ app = Flask(__name__)
 
 # Initialize Supabase client
 supabase_initialized = init_supabase()
+if not supabase_initialized:
+    logger.error("Failed to initialize Supabase client")
+    exit(1)
+
+# Create a global Supabase client with admin access using service role key
+supabase = get_authenticated_client()
+if not supabase:
+    logger.error("Failed to create Supabase admin client")
+    exit(1)
+logger.info("Supabase admin client initialized successfully")
 
 # Initialize Notion client
-NOTION_API_KEY = os.getenv("NOTION_API_KEY")
-notion = Client(auth=NOTION_API_KEY)
+# NOTION_API_KEY = os.getenv("NOTION_API_KEY")
+# notion = Client(auth=NOTION_API_KEY)
 
 # Initialize the agent for processing comments
 # notion_agent = create_custom_notion_agent()
-notion_agent = get_graph()
+chatbot = get_graph()
 
 # Get configuration from environment variables
 POLLING_INTERVAL = int(os.getenv("POLLING_INTERVAL", "60"))  # Default to 60 seconds
@@ -105,52 +115,87 @@ def start_scheduler():
         poll_notion()
         time.sleep(POLLING_INTERVAL)
 
-def fetch_comment_from_parent(parent_id: str, comment_id: Optional[str] = None):
-	comments = notion.comments.list(block_id=parent_id)
+def fetch_comment_from_parent(comments: dict, parent_id: str, comment_id: Optional[str] = None):
+    """
+    Sort comments returned by the notion API by returning a list of ordered comments belonging to the block with the given parent_id.
+    Optionally, return only the comment requested by ID.
+    
+    Args:
+        comments (dict): Dictionary of comments retrieved from Notion
+        parent_id (str): ID of the parent block
+        comment_id (str, optional): ID of the specific comment to fetch
+        
+    Returns:
+        dict: Dictionary of comments or a specific comment if comment_id is provided
+    """
  
-	# catch no comments found by checking the length of the results field
-	if len(comments.get('results', [])) == 0:
-		return {}
+    # catch no comments found by checking the length of the results field
+    if len(comments.get('results', [])) == 0:
+        return {}
 
-	# optionally, return only the comment requested by ID
-	if comment_id:
-		for this_c in comments.get('results'):
-			if this_c['id'] == comment_id:
-				return this_c
+    # optionally, return only the comment requested by ID
+    if comment_id:
+        for this_c in comments.get('results'):
+            if this_c['id'] == comment_id:
+                return this_c
 
-	# Finally, return all comments
-	return comments.get('results', 'No comments found')
+    # Finally, return all comments
+    return comments.get('results', 'No comments found')
 
 def process_comment(request_json):
     """Handle Notion comment events."""
+    logger.info(f"Processing comment event: {request_json.get('id', 'unknown')}")
     
-    # Get comments on the parent block
-    comment = fetch_comment_from_parent(request_json['data']['parent']['id'], request_json['entity']['id'])
-    # logger.info(f"Comment data: {comment}")
-    
-    # Extract the comment's text
+    # Use the global supabase client with admin access
+    # Get the user's access token from the subscriptions table
     try:
-        comment_text = [item['plain_text'] for item in comment['rich_text']]
-        logger.info(f"Comment text: {comment_text}")
+        response = supabase.table("subscriptions").select("access_token").eq("notion_user_id", request_json['authors'][0]['id']).execute()
+        
+        if not response.data:
+            logger.error(f"No subscription found for Notion user ID: {request_json['authors'][0]['id']}")
+            return {"status": "error", "message": "No subscription found"}
+            
+        access_token = response.data[0].get('access_token')
+        
+        if not access_token:
+            logger.error(f"No access token found for Notion user ID: {request_json['authors'][0]['id']}")
+            return {"status": "error", "message": "No access token found"}
+        
+        # Initialize Notion client with user's access token
+        notion = Client(auth=access_token)
+        
+        # Get comments on the parent block
+        comments = notion.comments.list(block_id=request_json['data']['parent']['id'])
+        
+        comment = fetch_comment_from_parent(comments, request_json['data']['parent']['id'], request_json['entity']['id'])
+        logger.info(f"Comment data: {comment}")
+        
+        # Extract the comment's text
+        try:
+            comment_text = [item['plain_text'] for item in comment[0]['rich_text']]
+            logger.info(f"Comment text: {comment_text}")
+        except Exception as e:
+            logger.error(f"Failed to extract comment text: {e}")
+            return {"status": "error", "message": f"Failed to extract comment text: {e}"}
+        
+        # Process the comment using the agent
+        response = chatbot.invoke({"messages": [{"role": "user", "content": comment_text}]})
+        logger.info(f"Agent Response: {response}")
+        
+        # Reply to the triggering comment with the response
+        reply = notion.comments.create(discussion_id=comment['discussion_id'], 
+                            rich_text=[{
+                                        "text": {
+                                        "content": response['messages'][-1].content
+                                        }
+                                    }]
+        )
+        
+        return reply
     except Exception as e:
-        logger.error(f"Failed to extract comment text: {e}")
-        return
-    
-    # Process the comment using the agent
-    response = notion_agent.invoke({"messages": [{"role": "user", "content": comment_text}]})
-    logger.info(f"Agent Response: {response}")
-    
-    # Reply to the triggering comment with the response
-    reply = notion.comments.create(discussion_id=comment['discussion_id'], 
-                        rich_text=[{
-                                    "text": {
-                                    "content": response['messages'][-1].content
-                                    }
-                                }]
-    )
-    
-    return reply 
-    
+        logger.error(f"Error processing comment: {e}")
+        return {"status": "error", "message": f"Error processing comment: {e}"}
+
 def action_router(event_payload):
     """Route the event payload to the appropriate handler based on event type and content.
     

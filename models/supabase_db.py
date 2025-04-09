@@ -48,6 +48,72 @@ def init_supabase():
         logger.error(f"Error initializing Supabase client: {e}")
         return False
 
+def get_authenticated_client(notion_user_id=None):
+    """
+    Get an authenticated Supabase client.
+    
+    Args:
+        notion_user_id (str, optional): The Notion user ID to get the client for.
+            If None, returns a client with admin access using the service role key.
+        
+    Returns:
+        Client: Authenticated Supabase client or None if error
+    """
+    if not supabase:
+        logger.error("Main Supabase client not initialized")
+        return None
+    
+    try:
+        # If no user ID is provided, return a client with admin access
+        if notion_user_id is None:
+            supabase_url = os.getenv("SUPABASE_URL")
+            supabase_service_role = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+            
+            if not supabase_url or not supabase_service_role:
+                logger.error("Missing required Supabase configuration for admin access")
+                return None
+                
+            # Create an admin client with service role key
+            admin_client = create_client(supabase_url, supabase_service_role)
+            logger.info("Created Supabase admin client with service role key")
+            return admin_client
+        
+        # Otherwise, get the user's access token from the subscriptions table
+        response = supabase.table("subscriptions").select("access_token").eq("notion_user_id", notion_user_id).execute()
+        
+        if not response.data:
+            logger.error(f"No subscription found for Notion user ID: {notion_user_id}")
+            return None
+            
+        access_token = response.data[0].get('access_token')
+        
+        if not access_token:
+            logger.error(f"No access token found for Notion user ID: {notion_user_id}")
+            return None
+            
+        # Create a new client with the user's access token
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_KEY")
+        
+        if not supabase_url or not supabase_key:
+            logger.error("Missing required Supabase configuration")
+            return None
+            
+        # Create an authenticated client
+        authenticated_client = create_client(supabase_url, supabase_key)
+        
+        # Set the user's access token
+        # Note: This approach depends on how your Supabase auth is configured
+        # For JWT auth, you might need to set the auth header differently
+        authenticated_client.auth.set_auth(access_token)
+        
+        logger.info(f"Created authenticated Supabase client for Notion user ID: {notion_user_id}")
+        return authenticated_client
+        
+    except Exception as e:
+        logger.error(f"Error creating authenticated Supabase client: {e}")
+        return None
+
 def get_subscriptions():
     """
     Get all subscriptions from the Supabase database.
