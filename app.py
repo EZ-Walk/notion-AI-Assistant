@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from notion_client import Client
 
 # Import Supabase database and services
-from models.supabase_db import init_supabase, get_subscriptions
+from models.supabase_db import init_supabase, get_subscriptions, is_user_authorized
 from models.supabase_comment_service import SupabaseCommentService
 
 # Import LangGraph agent
@@ -187,7 +187,7 @@ def action_router(event_payload):
     return response
 
 
-@app.route('/comment-created', methods=['POST'])
+@app.route('/comments', methods=['POST'])
 def handle_comment_created():
     """Handle Notion comment events."""
     
@@ -196,8 +196,24 @@ def handle_comment_created():
         logging.info(f"Received verification token: {request.json['verification_token']}")
         return jsonify({"status": "success"})
     
+    # Check if the request has authors field and extract the author ID
+    if not request.json.get('authors') or not request.json['authors']:
+        logging.error("No authors found in the request payload")
+        return jsonify({"status": "error", "message": "No authors found in the request"}), 400
+    
+    # Extract the author ID from the request
+    author_id = request.json['authors'][0].get('id')
+    if not author_id:
+        logging.error("No author ID found in the request payload")
+        return jsonify({"status": "error", "message": "No author ID found"}), 400
+    
+    # Check if the user is authorized
+    if not is_user_authorized(author_id):
+        logging.warning(f"Unauthorized request from user: {author_id}")
+        return jsonify({"status": "error", "message": "User not authorized"}), 403
+    
     # Handle a new comment event
-    logging.info(f"New {request.json.get('type', 'unknown')} event received")
+    logging.info(f"New {request.json.get('type', 'unknown')} event received from authorized user: {author_id}")
     # Route the event to the appropriate handler
     response = action_router(request.json)
     
