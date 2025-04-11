@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from notion_client import Client
 
 # Import Supabase database and services
-from models.supabase_db import init_supabase, get_subscriptions, is_user_authorized, get_authenticated_client
+from models.supabase_db import get_subscriptions, is_user_authorized, get_supabase_client
 from models.supabase_comment_service import SupabaseCommentService
 
 # Import LangGraph agent
@@ -30,24 +30,13 @@ load_dotenv()
 app = Flask(__name__)
 
 # Initialize Supabase client
-supabase_initialized = init_supabase()
-if not supabase_initialized:
-    logger.error("Failed to initialize Supabase client")
-    exit(1)
-
-# Create a global Supabase client with admin access using service role key
-supabase = get_authenticated_client()
+supabase = get_supabase_client()
 if not supabase:
     logger.error("Failed to create Supabase admin client")
     exit(1)
 logger.info("Supabase admin client initialized successfully")
 
-# Initialize Notion client
-# NOTION_API_KEY = os.getenv("NOTION_API_KEY")
-# notion = Client(auth=NOTION_API_KEY)
-
 # Initialize the agent for processing comments
-# notion_agent = create_custom_notion_agent()
 chatbot = get_graph()
 
 # Get configuration from environment variables
@@ -55,7 +44,7 @@ POLLING_INTERVAL = int(os.getenv("POLLING_INTERVAL", "60"))  # Default to 60 sec
 PORT = int(os.getenv("PORT", "5001"))  # Default to port 5001
 
 # Check for required environment variables
-required_vars = ["SUPABASE_URL", "SUPABASE_KEY"]
+required_vars = ["SUPABASE_URL", "SUPABASE_KEY", "ANTHROPIC_API_KEY"]
 missing_vars = [var for var in required_vars if not os.getenv(var)]
 
 if missing_vars:
@@ -238,7 +227,8 @@ def handle_events():
     print(request.json)
     # Handle a webhook verification request
     if request.json.get('verification_token'):
-        logging.info(f"Received verification token: {request.json['verification_token']}")
+        os.environ["NOTION_VERIFICATION_TOKEN"] = request.json['verification_token']
+        logging.info(f"Received verification token: {os.environ['NOTION_VERIFICATION_TOKEN']}")
         return jsonify({"status": "success"})
     
     # Check if the request has authors field and extract the author ID
@@ -351,7 +341,7 @@ if __name__ == '__main__':
     # Only start the application if all required environment variables are set
     if not missing_vars:
         # Check if Supabase was initialized successfully
-        if not supabase_initialized:
+        if not supabase:
             logger.error("Failed to initialize Supabase client. Check your credentials.")
         else:
             # Check subscriptions on startup
