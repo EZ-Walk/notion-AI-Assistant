@@ -2,3 +2,4 @@
 .env
 .vscode
 notion_comments.db
+__pycache__

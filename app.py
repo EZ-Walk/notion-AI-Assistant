@@ -55,7 +55,7 @@ POLLING_INTERVAL = int(os.getenv("POLLING_INTERVAL", "60"))  # Default to 60 sec
 PORT = int(os.getenv("PORT", "5001"))  # Default to port 5001
 
 # Check for required environment variables
-required_vars = ["NOTION_API_KEY", "NOTION_PAGE", "SUPABASE_URL", "SUPABASE_KEY"]
+required_vars = ["SUPABASE_URL", "SUPABASE_KEY"]
 missing_vars = [var for var in required_vars if not os.getenv(var)]
 
 if missing_vars:
@@ -232,10 +232,10 @@ def action_router(event_payload):
     return response
 
 
-@app.route('/comments', methods=['POST'])
-def handle_comment_created():
+@app.route('/events', methods=['POST'])
+def handle_events():
     """Handle Notion comment events."""
-    
+    print(request.json)
     # Handle a webhook verification request
     if request.json.get('verification_token'):
         logging.info(f"Received verification token: {request.json['verification_token']}")

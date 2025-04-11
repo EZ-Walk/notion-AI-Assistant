@@ -20,8 +20,7 @@ def get_graph():
     from langchain_anthropic import ChatAnthropic
 
     llm = ChatAnthropic(model='claude-3-5-haiku-20241022',
-                        temperature=os.getenv("LLM_TEMPERATURE"), 
-                        max_tokens_to_sample=os.getenv("LLM_MAX_TOKENS"))
+                        temperature=os.getenv("LLM_TEMPERATURE"))
 
 
     def chatbot(state: State):
