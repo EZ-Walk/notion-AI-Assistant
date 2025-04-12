@@ -224,35 +224,24 @@ def action_router(event_payload):
 @app.route('/events', methods=['POST'])
 def handle_events():
     """Handle Notion comment events."""
-    print(request.json)
+    
     # Handle a webhook verification request
     if request.json.get('verification_token'):
         os.environ["NOTION_VERIFICATION_TOKEN"] = request.json['verification_token']
         logging.info(f"Received verification token: {os.environ['NOTION_VERIFICATION_TOKEN']}")
         return jsonify({"status": "success"})
     
-    # Check if the request has authors field and extract the author ID
-    if not request.json.get('authors') or not request.json['authors']:
-        logging.error("No authors found in the request payload")
-        return jsonify({"status": "error", "message": "No authors found in the request"}), 400
+    # TODO: validate the request using the verification token set in the environment
     
-    # Extract the author ID from the request
-    author_id = request.json['authors'][0].get('id')
-    if not author_id:
-        logging.error("No author ID found in the request payload")
-        return jsonify({"status": "error", "message": "No author ID found"}), 400
-    
-    # Check if the user is authorized
-    if not is_user_authorized(author_id):
-        logging.warning(f"Unauthorized request from user: {author_id}")
-        return jsonify({"status": "error", "message": "User not authorized"}), 403
-    
-    # Handle a new comment event
-    logging.info(f"New {request.json.get('type', 'unknown')} event received from authorized user: {author_id}")
     # Route the event to the appropriate handler
-    response = action_router(request.json)
+    if not request.json.get('type'):
+        return jsonify({"status": "error", "message": "Invalid event type"}), 200
     
-    return jsonify(response)
+    elif 'comment' in request.json.get('type'):
+        response = action_router(request.json)
+        return jsonify(response)
+    
+    return jsonify({"status": "success"}), 200
 
 @app.route('/health', methods=['GET'])
 def health_check():
