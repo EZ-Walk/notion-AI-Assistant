@@ -13,7 +13,7 @@ from models.supabase_db import get_subscriptions, is_user_authorized, get_supaba
 from models.supabase_comment_service import SupabaseCommentService
 
 # Import LangGraph agent
-from models.langgraph_agent import get_graph
+from models.agent import graph
 
 # Configure logging
 logging.basicConfig(
@@ -35,9 +35,6 @@ if not supabase:
     logger.error("Failed to create Supabase admin client")
     exit(1)
 logger.info("Supabase admin client initialized successfully")
-
-# Initialize the agent for processing comments
-chatbot = get_graph()
 
 # Get configuration from environment variables
 POLLING_INTERVAL = int(os.getenv("POLLING_INTERVAL", "60"))  # Default to 60 seconds
@@ -168,7 +165,10 @@ def process_comment(request_json):
             return {"status": "error", "message": f"Failed to extract comment text: {e}"}
         
         # Process the comment using the agent
-        response = chatbot.invoke({"messages": [{"role": "user", "content": comment_text}]})
+        response = graph.invoke(
+            {"messages": [{"role": "user", "content": comment_text}]},
+            config={'configurable': {'thread_id': comment['discussion_id']}}
+        )
         logger.info(f"Agent Response: {response}")
         
         # Reply to the triggering comment with the response

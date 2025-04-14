@@ -28,7 +28,7 @@ cp .env.sample .env
 
 ```
 NOTION_API_KEY=your_notion_api_key_here
-NOTION_PAGE=your_notion_page_id_here
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
 ```
 
 ## Running the Application
