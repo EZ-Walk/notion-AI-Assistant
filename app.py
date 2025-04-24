@@ -162,7 +162,7 @@ def process_comment(request_json):
         
         # Extract the comment's text
         try:
-            comment_text = [item['plain_text'] for item in comment[0]['rich_text']]
+            comment_text = [item['plain_text'] for item in comment['rich_text']]
             logger.info(f"Comment text: {comment_text}")
         except Exception as e:
             logger.error(f"Failed to extract comment text: {e}")
