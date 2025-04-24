@@ -12,7 +12,7 @@ from notion_client import Client
 from models.supabase_db import get_subscriptions, is_user_authorized, get_supabase_client
 
 # Import LangGraph agent
-from models.agent import graph
+from models.agent import graph, LLM_MODEL, LLM_TEMPERATURE
 
 
 # Configure logging
@@ -270,54 +270,25 @@ def health_check():
         "notion_page_id": os.getenv("NOTION_PAGE", "No page Id provided")
     })
 
-@app.route('/status', methods=['GET'])
+@app.route('/', methods=['GET'])
 def status():
     """Service status and statistics endpoint."""
-    # Get comment statistics from database
-    all_comments = SupabaseCommentService.get_comments_from_db()
-    processed_comments = [c for c in all_comments if c.get("status") == "processed"]
-    new_comments = [c for c in all_comments if c.get("status") == "new"]
-    error_comments = [c for c in all_comments if c.get("status") == "error"]
     
     # Get subscriptions
     subscriptions = get_subscriptions()
     
     return jsonify({
         "status": "running",
-        "notion_page_id": os.getenv("NOTION_PAGE"),
+        "polling_active": POLLING_ACTIVE,
         "polling_interval": POLLING_INTERVAL,
-        "comments": {
-            "total": len(all_comments),
-            "processed": len(processed_comments),
-            "new": len(new_comments),
-            "error": len(error_comments)
-        },
+        "LLM_model": LLM_MODEL,
+        "SUPABASE_URL": os.getenv("SUPABASE_URL"),
         "subscriptions": {
             "total": len(subscriptions)
         },
         "timestamp": datetime.now().isoformat()
     })
 
-@app.route('/manual-poll', methods=['GET'])
-def manual_poll():
-    """Trigger an immediate polling cycle."""
-    poll_notion()
-    
-    # Get updated statistics from database
-    all_comments = SupabaseCommentService.get_comments_from_db()
-    processed_comments = [c for c in all_comments if c.get("status") == "processed"]
-    new_comments = [c for c in all_comments if c.get("status") == "new"]
-    
-    return jsonify({
-        "status": "success",
-        "message": "Manual polling completed",
-        "comments": {
-            "total": len(all_comments),
-            "processed": len(processed_comments),
-            "new": len(new_comments)
-        },
-        "timestamp": datetime.now().isoformat()
-    })
 
 # New endpoint to check subscriptions
 @app.route('/subscriptions', methods=['GET'])

@@ -3,6 +3,7 @@ from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_core.tools import tool
 from typing import Annotated
 from typing_extensions import TypedDict
+from os import getenv
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
@@ -23,10 +24,12 @@ def human_assistance(query: str) -> str:
     human_response = interrupt({"query": query})
     return human_response["data"]
 
+LLM_MODEL = getenv("LLM_MODEL", "claude-3-5-sonnet-20240620")
+LLM_TEMPERATURE = float(getenv("LLM_TEMPERATURE", "0.9"))
 
 tool = TavilySearchResults(max_results=2)
 tools = [tool, human_assistance]
-llm = ChatAnthropic(model="claude-3-5-sonnet-20240620")
+llm = ChatAnthropic(model=LLM_MODEL, temperature=LLM_TEMPERATURE)
 llm_with_tools = llm.bind_tools(tools)
 
 

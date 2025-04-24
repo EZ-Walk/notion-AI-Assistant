@@ -3,4 +3,5 @@
 .vscode
 notion_comments.db
 __pycache__
+models/__pycache__
 playground.ipynb
