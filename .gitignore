@@ -1,3 +1,6 @@
 .venv
 .env
 .vscode
+notion_comments.db
+__pycache__
+playground.ipynb
