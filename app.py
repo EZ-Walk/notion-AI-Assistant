@@ -12,7 +12,7 @@ from notion_client import Client
 from models.supabase_db import get_subscriptions, is_user_authorized, get_supabase_client
 
 # Import LangGraph agent
-from models.agent import graph
+from models.agent import graph, LLM_MODEL, LLM_TEMPERATURE
 
 
 # Configure logging
@@ -162,7 +162,7 @@ def process_comment(request_json):
         
         # Extract the comment's text
         try:
-            comment_text = [item['plain_text'] for item in comment[0]['rich_text']]
+            comment_text = [item['plain_text'] for item in comment['rich_text']]
             logger.info(f"Comment text: {comment_text}")
         except Exception as e:
             logger.error(f"Failed to extract comment text: {e}")
@@ -239,98 +239,34 @@ def handle_events():
     
     # TODO: validate the request using the verification token set in the environment
     
-    # Route the event to the appropriate handler
     if not request.json.get('type'):
         return jsonify({"status": "error", "message": "Invalid event type"}), 200
     
-    elif 'comment' in request.json.get('type'):
-        response = action_router(request.json)
-        return jsonify(response), 200
+    # Route the event to the appropriate handler
+    response = action_router(request.json)
     
-    return jsonify({"status": "success"}), 200
+    return jsonify(response), 200
 
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Health check endpoint."""
-    # Check database connection
-    db_healthy = True
-    try:
-        # Try to get subscriptions as a database health check
-        subscriptions = get_subscriptions()
-        if subscriptions is None:
-            db_healthy = False
-    except Exception as e:
-        db_healthy = False
-        logger.error(f"Database health check failed: {e}")
-    
-    return jsonify({
-        "status": "healthy",
-        "database": "connected" if db_healthy else "error",
-        "timestamp": datetime.now().isoformat(),
-        "notion_page_id": os.getenv("NOTION_PAGE", "No page Id provided")
-    })
 
-@app.route('/status', methods=['GET'])
+@app.route('/', methods=['GET'])
 def status():
     """Service status and statistics endpoint."""
-    # Get comment statistics from database
-    all_comments = SupabaseCommentService.get_comments_from_db()
-    processed_comments = [c for c in all_comments if c.get("status") == "processed"]
-    new_comments = [c for c in all_comments if c.get("status") == "new"]
-    error_comments = [c for c in all_comments if c.get("status") == "error"]
     
     # Get subscriptions
     subscriptions = get_subscriptions()
     
     return jsonify({
         "status": "running",
-        "notion_page_id": os.getenv("NOTION_PAGE"),
+        "polling_active": POLLING_ACTIVE,
         "polling_interval": POLLING_INTERVAL,
-        "comments": {
-            "total": len(all_comments),
-            "processed": len(processed_comments),
-            "new": len(new_comments),
-            "error": len(error_comments)
-        },
+        "LLM_model": LLM_MODEL,
+        "SUPABASE_URL": os.getenv("SUPABASE_URL"),
         "subscriptions": {
             "total": len(subscriptions)
         },
         "timestamp": datetime.now().isoformat()
-    })
+    }), 200
 
-@app.route('/manual-poll', methods=['GET'])
-def manual_poll():
-    """Trigger an immediate polling cycle."""
-    poll_notion()
-    
-    # Get updated statistics from database
-    all_comments = SupabaseCommentService.get_comments_from_db()
-    processed_comments = [c for c in all_comments if c.get("status") == "processed"]
-    new_comments = [c for c in all_comments if c.get("status") == "new"]
-    
-    return jsonify({
-        "status": "success",
-        "message": "Manual polling completed",
-        "comments": {
-            "total": len(all_comments),
-            "processed": len(processed_comments),
-            "new": len(new_comments)
-        },
-        "timestamp": datetime.now().isoformat()
-    })
-
-# New endpoint to check subscriptions
-@app.route('/subscriptions', methods=['GET'])
-def list_subscriptions():
-    """List all subscriptions from the database."""
-    subscriptions = get_subscriptions()
-    
-    return jsonify({
-        "status": "success",
-        "subscriptions": subscriptions,
-        "count": len(subscriptions),
-        "timestamp": datetime.now().isoformat()
-    })
 
 if __name__ == '__main__':
     # Only start the application if all required environment variables are set
