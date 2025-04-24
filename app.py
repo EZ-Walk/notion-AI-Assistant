@@ -239,36 +239,14 @@ def handle_events():
     
     # TODO: validate the request using the verification token set in the environment
     
-    # Route the event to the appropriate handler
     if not request.json.get('type'):
         return jsonify({"status": "error", "message": "Invalid event type"}), 200
     
-    elif 'comment' in request.json.get('type'):
-        response = action_router(request.json)
-        return jsonify(response), 200
+    # Route the event to the appropriate handler
+    response = action_router(request.json)
     
-    return jsonify({"status": "success"}), 200
+    return jsonify(response), 200
 
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Health check endpoint."""
-    # Check database connection
-    db_healthy = True
-    try:
-        # Try to get subscriptions as a database health check
-        subscriptions = get_subscriptions()
-        if subscriptions is None:
-            db_healthy = False
-    except Exception as e:
-        db_healthy = False
-        logger.error(f"Database health check failed: {e}")
-    
-    return jsonify({
-        "status": "healthy",
-        "database": "connected" if db_healthy else "error",
-        "timestamp": datetime.now().isoformat(),
-        "notion_page_id": os.getenv("NOTION_PAGE", "No page Id provided")
-    })
 
 @app.route('/', methods=['GET'])
 def status():
@@ -287,21 +265,8 @@ def status():
             "total": len(subscriptions)
         },
         "timestamp": datetime.now().isoformat()
-    })
+    }), 200
 
-
-# New endpoint to check subscriptions
-@app.route('/subscriptions', methods=['GET'])
-def list_subscriptions():
-    """List all subscriptions from the database."""
-    subscriptions = get_subscriptions()
-    
-    return jsonify({
-        "status": "success",
-        "subscriptions": subscriptions,
-        "count": len(subscriptions),
-        "timestamp": datetime.now().isoformat()
-    })
 
 if __name__ == '__main__':
     # Only start the application if all required environment variables are set
