@@ -10,7 +10,6 @@ from notion_client import Client
 
 # Import Supabase database and services
 from models.supabase_db import get_subscriptions, is_user_authorized, get_supabase_client
-from models.supabase_comment_service import SupabaseCommentService
 
 # Import LangGraph agent
 from models.agent import graph
@@ -229,7 +228,7 @@ def handle_events():
     if request.json.get('verification_token'):
         os.environ["NOTION_VERIFICATION_TOKEN"] = request.json['verification_token']
         logging.info(f"Received verification token: {os.environ['NOTION_VERIFICATION_TOKEN']}")
-        return jsonify({"status": "success"})
+        return jsonify({"status": "success"}), 200
     
     # TODO: validate the request using the verification token set in the environment
     
@@ -239,7 +238,7 @@ def handle_events():
     
     elif 'comment' in request.json.get('type'):
         response = action_router(request.json)
-        return jsonify(response)
+        return jsonify(response), 200
     
     return jsonify({"status": "success"}), 200
 
