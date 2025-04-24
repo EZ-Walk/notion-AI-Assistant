@@ -14,6 +14,7 @@ from models.supabase_db import get_subscriptions, is_user_authorized, get_supaba
 # Import LangGraph agent
 from models.agent import graph
 
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -35,12 +36,15 @@ if not supabase:
     exit(1)
 logger.info("Supabase admin client initialized successfully")
 
+
 # Get configuration from environment variables
 POLLING_INTERVAL = int(os.getenv("POLLING_INTERVAL", "60"))  # Default to 60 seconds
 PORT = int(os.getenv("PORT", "5001"))  # Default to port 5001
 
 # Check for required environment variables
+
 required_vars = ["SUPABASE_URL", "SUPABASE_KEY", "ANTHROPIC_API_KEY"]
+
 missing_vars = [var for var in required_vars if not os.getenv(var)]
 
 if missing_vars:
@@ -63,6 +67,7 @@ def get_comments_from_notion():
             logger.info(f"Comment processing results: {result['new']} new, {result['updated']} updated, {result['unchanged']} unchanged")
         
         return results
+
     except Exception as e:
         logger.error(f"Error retrieving comments: {e}")
         return []
@@ -178,11 +183,13 @@ def process_comment(request_json):
                                         }
                                     }]
         )
+
         
         return reply
     except Exception as e:
         logger.error(f"Error processing comment: {e}")
         return {"status": "error", "message": f"Error processing comment: {e}"}
+
 
 def action_router(event_payload):
     """Route the event payload to the appropriate handler based on event type and content.
