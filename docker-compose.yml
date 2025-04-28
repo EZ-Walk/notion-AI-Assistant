@@ -1,14 +1,11 @@
-version: '3'
-
 services:
-  monitor:
+  comment-processor:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
       - "5001:5001"
     environment:
-      - POLLING_INTERVAL=${POLLING_INTERVAL:-60}
       - PORT=5001
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - TAVILY_API_KEY=${TAVILY_API_KEY}

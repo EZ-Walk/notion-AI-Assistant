@@ -1,7 +1,5 @@
 import os
-import time
 import logging
-import threading
 from typing import Optional
 from datetime import datetime
 from flask import Flask, jsonify, request
@@ -38,7 +36,6 @@ logger.info("Supabase admin client initialized successfully")
 
 
 # Get configuration from environment variables
-POLLING_INTERVAL = int(os.getenv("POLLING_INTERVAL", "60"))  # Default to 60 seconds
 PORT = int(os.getenv("PORT", "5001"))  # Default to port 5001
 
 # Check for required environment variables
@@ -51,8 +48,6 @@ if missing_vars:
     logger.error(f"Missing required environment variables: {', '.join(missing_vars)}")
     logger.error("Please set these variables in your .env file. See .env.sample for reference.")
 
-# Flag to control polling
-POLLING_ACTIVE = False
 
 def get_comments_from_notion():
     """Retrieve all comments from the specified Notion page and save to database."""
@@ -72,38 +67,6 @@ def get_comments_from_notion():
         logger.error(f"Error retrieving comments: {e}")
         return []
 
-def get_comments_from_db(discussion_id=None, parent_id=None, status=None):
-    """Retrieve comments from the database with optional filters."""
-    return SupabaseCommentService.get_comments_from_db(discussion_id, parent_id, status)
-
-def poll_notion():
-    """Poll the Notion workspace for new comments."""
-    
-    logger.info(f"Polling Notion for new comments")
-    
-    # Get comments from Notion
-    comments = get_comments_from_notion()
-    
-    # Get comments that need processing (new or updated)
-    comments_to_process = SupabaseCommentService.get_comments_from_db(None, None, "new")
-    comments_to_process.extend(SupabaseCommentService.get_comments_from_db(None, None, "updated"))
-    
-    if comments_to_process:
-        logger.info(f"Found {len(comments_to_process)} comments to process (new or updated)")
-        # Just log the comments, no processing
-        for comment in comments_to_process:
-            logger.info(f"New comment detected: {comment['id']} - {comment['plain_text'][:50] if comment['plain_text'] else ''}...")
-    else:
-        logger.info("No new comments to process")
-    
-    logger.info("Finished polling cycle")
-
-def start_scheduler():
-    """Start a simple polling loop at regular intervals."""
-    while POLLING_ACTIVE:
-        # Each polling cycle runs in the app context
-        poll_notion()
-        time.sleep(POLLING_INTERVAL)
 
 def fetch_comment_from_parent(comments: dict, parent_id: str, comment_id: Optional[str] = None):
     """
@@ -257,8 +220,6 @@ def status():
     
     return jsonify({
         "status": "running",
-        "polling_active": POLLING_ACTIVE,
-        "polling_interval": POLLING_INTERVAL,
         "LLM_model": LLM_MODEL,
         "SUPABASE_URL": os.getenv("SUPABASE_URL"),
         "subscriptions": {
@@ -278,11 +239,6 @@ if __name__ == '__main__':
             # Check subscriptions on startup
             subscriptions = get_subscriptions()
             logger.info(f"Found {len(subscriptions)} subscriptions in the database")
-            
-            # Start the polling scheduler in a separate thread
-            if POLLING_ACTIVE:
-                scheduler_thread = threading.Thread(target=start_scheduler, daemon=True)
-                scheduler_thread.start()
             
             # Start the Flask app
             logger.info("Starting Notion Comment AI Assistant")
