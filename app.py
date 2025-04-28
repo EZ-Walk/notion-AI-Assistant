@@ -55,12 +55,7 @@ def get_comments_from_notion():
         # Get comments from the page using notion-client
         comments = notion.comments.list()
         results = comments.get("results", [])
-        
-        # Save comments to database with comparison logic
-        if results:
-            result = SupabaseCommentService.save_comments_to_db(results)
-            logger.info(f"Comment processing results: {result['new']} new, {result['updated']} updated, {result['unchanged']} unchanged")
-        
+                
         return results
 
     except Exception as e:
