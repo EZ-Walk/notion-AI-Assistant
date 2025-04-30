@@ -24,10 +24,9 @@ Focus on the five phases of the webhook processing pipeline:
 
 ## 3. Core Testing Principles
 
-1. **Use Real Supabase Instances**: Test with actual database instances instead of mocks
-2. **Mock External Services**: Use mocks for Notion API and LangGraph
-3. **Cover All Phases**: Ensure each pipeline phase has dedicated tests
-4. **Test Error Scenarios**: Validate error handling throughout the pipeline
+1. **Mock External Services**: Use mocks for Supabase,Notion API and LangGraph
+2. **Cover All Phases**: Ensure each pipeline phase has dedicated tests
+3. **Test Error Scenarios**: Validate error handling throughout the pipeline
 
 ## 4. Fixture Strategy
 
