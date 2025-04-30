@@ -1,3 +1,4 @@
+from ast import Dict
 import os
 import logging
 from typing import Optional
@@ -110,19 +111,19 @@ async def process_comment(request_json):
             logger.error(f"No access token found for Notion user ID: {request_json['authors'][0]['id']}")
             return {"status": "error", "message": "No access token found"}
         
-        print(access_token)
         # Initialize Notion client with user's access token
         with Client(auth=access_token) as notion:
-            async def post_comment(content: str, discussion_id: str):
+            async def post_comment(content: str, discussion_id: str) -> dict:
+                # proceed with parent creation
                 return notion.comments.create(
                     discussion_id=discussion_id,
                     rich_text=[{
-                        "text": {
-                            "content": content
-                        }
-                    }]
-                )
-        
+                    "text": {
+                        "content": content
+                    }
+                }]
+            )
+            
             async def get_comment_body(request_json: dict, notion: Client) -> str:
                 # Get comments on the parent block
                 comments = notion.comments.list(block_id=request_json['data']['parent']['id'])
@@ -152,8 +153,9 @@ async def process_comment(request_json):
         
             # Reply to the triggering comment with the response
             reply = await post_comment(response['messages'][-1].content, comment['discussion_id'])
-            logger.info(f"Reply: {reply}")
-            return reply
+            
+            
+            return {"status": "success", "message": "Comment processed successfully", "reply": reply}
         
     except Exception as e:
         logger.error(f"Error processing comment: {e}")
@@ -181,11 +183,7 @@ def action_router(event_payload):
         if event_payload.get('type') == 'comment.created':
             result = asyncio.run(process_comment(event_payload))
             
-            response.update({
-                "status": "success",
-                "action": "processed_comment",
-                "result": result
-        })
+            response.update(result)
         elif event_payload.get('type') == 'comment.deleted':
             pass
             # TODO: Handle comment deletion
