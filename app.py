@@ -5,6 +5,7 @@ from datetime import datetime
 from flask import Flask, jsonify, request
 from dotenv import load_dotenv
 from notion_client import Client
+import asyncio
 
 # Import Supabase database and services
 from models.supabase_db import get_subscriptions, is_user_authorized, get_supabase_client
@@ -55,12 +56,7 @@ def get_comments_from_notion():
         # Get comments from the page using notion-client
         comments = notion.comments.list()
         results = comments.get("results", [])
-        
-        # Save comments to database with comparison logic
-        if results:
-            result = SupabaseCommentService.save_comments_to_db(results)
-            logger.info(f"Comment processing results: {result['new']} new, {result['updated']} updated, {result['unchanged']} unchanged")
-        
+                
         return results
 
     except Exception as e:
@@ -94,8 +90,8 @@ def fetch_comment_from_parent(comments: dict, parent_id: str, comment_id: Option
 
     # Finally, return all comments
     return comments.get('results', 'No comments found')
-
-def process_comment(request_json):
+    
+async def process_comment(request_json):
     """Handle Notion comment events."""
     logger.info(f"Processing comment event: {request_json.get('id', 'unknown')}")
     
@@ -114,45 +110,54 @@ def process_comment(request_json):
             logger.error(f"No access token found for Notion user ID: {request_json['authors'][0]['id']}")
             return {"status": "error", "message": "No access token found"}
         
+        print(access_token)
         # Initialize Notion client with user's access token
-        notion = Client(auth=access_token)
+        with Client(auth=access_token) as notion:
+            async def post_comment(content: str, discussion_id: str):
+                return notion.comments.create(
+                    discussion_id=discussion_id,
+                    rich_text=[{
+                        "text": {
+                            "content": content
+                        }
+                    }]
+                )
         
-        # Get comments on the parent block
-        comments = notion.comments.list(block_id=request_json['data']['parent']['id'])
+            async def get_comment_body(request_json: dict, notion: Client) -> str:
+                # Get comments on the parent block
+                comments = notion.comments.list(block_id=request_json['data']['parent']['id'])
+                comment = fetch_comment_from_parent(comments, request_json['data']['parent']['id'], request_json['entity']['id'])
+                logger.info(f"Comment data: {comment}")
+                return comment
         
-        comment = fetch_comment_from_parent(comments, request_json['data']['parent']['id'], request_json['entity']['id'])
-        logger.info(f"Comment data: {comment}")
+            comment = await get_comment_body(request_json, notion)
+            # Send an initial response to let the user know we're working on it.
+            # await post_comment("Thinking...", comment['discussion_id'])
+            
+            # Extract the comment's text
+            try:
+                comment_text = [item['plain_text'] for item in comment['rich_text']]
+                logger.info(f"Comment text: {comment_text}")
+            except Exception as e:
+                logger.error(f"Failed to extract comment text: {e}")
+                return {"status": "error", "message": f"Failed to extract comment text: {e}"}
+            
         
-        # Extract the comment's text
-        try:
-            comment_text = [item['plain_text'] for item in comment['rich_text']]
-            logger.info(f"Comment text: {comment_text}")
-        except Exception as e:
-            logger.error(f"Failed to extract comment text: {e}")
-            return {"status": "error", "message": f"Failed to extract comment text: {e}"}
+            # Process the comment using the agent
+            response = await graph.ainvoke(
+                {"messages": [{"role": "user", "content": comment_text}]},
+                config={'configurable': {'thread_id': comment['discussion_id']}}
+            )
+            logger.info(f"Agent Response: {response}")
         
-        # Process the comment using the agent
-        response = graph.invoke(
-            {"messages": [{"role": "user", "content": comment_text}]},
-            config={'configurable': {'thread_id': comment['discussion_id']}}
-        )
-        logger.info(f"Agent Response: {response}")
+            # Reply to the triggering comment with the response
+            reply = await post_comment(response['messages'][-1].content, comment['discussion_id'])
+            logger.info(f"Reply: {reply}")
+            return reply
         
-        # Reply to the triggering comment with the response
-        reply = notion.comments.create(discussion_id=comment['discussion_id'], 
-                            rich_text=[{
-                                        "text": {
-                                        "content": response['messages'][-1].content
-                                        }
-                                    }]
-        )
-
-        
-        return reply
     except Exception as e:
         logger.error(f"Error processing comment: {e}")
         return {"status": "error", "message": f"Error processing comment: {e}"}
-
 
 def action_router(event_payload):
     """Route the event payload to the appropriate handler based on event type and content.
@@ -166,7 +171,7 @@ def action_router(event_payload):
     logging.info(f"Routing action for event: {event_payload.get('type', 'unknown')}") 
     print(event_payload)
     
-    response = {"status": "success", "action": "none"}
+    response = {"status": "not set", "action": "none"}
     
     # Check if the author is a person (not a bot)
     if event_payload.get('authors') and event_payload['authors'][0].get('type') == 'person':
@@ -174,9 +179,10 @@ def action_router(event_payload):
         
         # Process the comment with the additional context
         if event_payload.get('type') == 'comment.created':
-            result = process_comment(event_payload)
+            result = asyncio.run(process_comment(event_payload))
             
             response.update({
+                "status": "success",
                 "action": "processed_comment",
                 "result": result
         })
